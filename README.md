@@ -1,1 +1,1 @@
-# swe_simulation
+# Shallow Water Equation(SWE) simulation
