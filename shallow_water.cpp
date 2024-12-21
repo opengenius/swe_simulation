@@ -72,8 +72,8 @@ int main() {
 		for (int xi = 0; xi < GRID_SIZE; ++xi) {
 			if (xi < GRID_SIZE / 2 - 1) {
 				float wh = std::max(0.0f, 1.0f - sim.ground_h.at(xi, yi));
-				sim.water_h_dst.set(xi, yi, wh);
-				sim.water_h.set(xi, yi, wh);
+				sim.water_heights[0].set(xi, yi, wh);
+				sim.water_heights[1].set(xi, yi, wh);
 			}
 
 			// 22 / 11 = 2
@@ -131,7 +131,7 @@ int main() {
 			int y = int(pos.y) < GRID_SIZE - 1 ? int(pos.y) : GRID_SIZE - 1;
 
 			if (x != 0 && y != 0 && x != (GRID_SIZE - 1) && y != (GRID_SIZE - 1)) {
-				sim.water_h.set(x, y, 1.1f);
+				sim.set_height(x, y, 1.1f);
 				// vel_u.at(x, y) = 10.0f;
 			}
 		}
@@ -151,9 +151,9 @@ int main() {
 				ImVec2 p0 = {xi * cell_size, yi * cell_size};
 				ImVec2 p1 = {p0.x + cell_size, p0.y + cell_size};
 
-				auto h = sim.water_h.at(xi, yi);
-				auto u = sim.vel_u.at(xi, yi);
-				auto v = sim.vel_v.at(xi, yi);
+				auto h = sim.height(xi, yi);
+				auto u = sim.velocity_u(xi, yi);
+				auto v = sim.velocity_v(xi, yi);
 				auto uv = abs(u) + abs(v);
 
 				auto div = sim.get_divergence(xi, yi);

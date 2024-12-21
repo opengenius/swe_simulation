@@ -9,31 +9,111 @@ template<int GRID_SIZE>
 struct swe_simulation_t {
     using grid_sized_t = grid_t<GRID_SIZE>;
 
-    grid_sized_t water_h = grid_sized_t(0.0f);
-	grid_sized_t water_h_dst = grid_sized_t(0.0f);
-	grid_sized_t vel_u = grid_sized_t(0.0f);
-	grid_sized_t vel_v = grid_sized_t(0.0f);
-	grid_sized_t ground_h = grid_sized_t(0.0f);
-
     const float dxdy = 0.4f;
+
+    grid_sized_t water_heights[2];
+	grid_sized_t vel_us[2];
+	grid_sized_t vel_vs[2];
+	grid_sized_t ground_h;
+	int water_index = 0;
+
+	void set_height(int x, int y, float v) {
+		water_heights[water_index].set(x, y, v);
+	}
+
+	float height(int x, int y) const {
+		return water_heights[water_index].at(x, y);
+	}
+
+	float velocity_u(int x, int y) const {
+		return vel_us[water_index].at(x, y, 0.0f);
+	}
+
+	float velocity_v(int x, int y) const {
+		return vel_vs[water_index].at(x, y, 0.0f);
+	}
+
+	static float interpolate(float a, float b, float w) {
+		return a * (1.0f - w) + b * w;
+	}
+
+	static float interpolate_grid(const grid_sized_t& grid, float x, float y) {
+		int xi = (int)x;
+		int yi = (int)y;
+		float x_fr = x - xi;
+		float y_fr = y - yi;
+
+		float g00 = grid.at(xi, yi, 0.0f);
+		float g10 = grid.at(xi + 1, yi, 0.0f);
+		float g01 = grid.at(xi, yi + 1, 0.0f);
+		float g11 = grid.at(xi + 1, yi + 1, 0.0f);
+
+		return interpolate(
+			interpolate(g00, g10, x_fr),
+			interpolate(g01, g11, x_fr),
+			y_fr);
+	}
+
     void step() {
         const float g = 9.81f;
 		const float dt = 0.01666f;	
-		const float EPS = 0.0001f * dxdy;
-		const float max_vel = dxdy / dt * 0.5f;
+		const float EPS = 0.001f;//0.0001f * dxdy;
+		const float max_vel = dxdy / dt * 0.5f; // 0.25f seems more stable with lower dx
         const float drag_shore_height_threshold = 0.1f;
         const float drag_factor = 0.05f;
 
-        // update velocities
+		int next_water_index = (water_index + 1) % 2;
+		
+		// advect velocities (Semi-Lagrangian Method)
+		auto& vel_u_src = vel_us[water_index];
+		auto& vel_v_src = vel_vs[water_index];
+		auto& vel_u_dst = vel_us[next_water_index];
+		auto& vel_v_dst = vel_vs[next_water_index];
 		for (int yi = 0; yi < GRID_SIZE - 1; ++yi) {
 			for (int xi = 0; xi < GRID_SIZE - 1; ++xi) {
-				float h_ij = water_h.at(xi, yi);
-				float h_i1j = water_h.at(xi + 1, yi);
-				float h_ij1 = water_h.at(xi, yi + 1);
+				{
+					auto u_xy = vel_u_src.at(xi, yi);
+					auto v_xy = interpolate_grid(vel_v_src, xi + 0.5f, yi - 0.5f);
 
-				float H_ij = ground_h.at(xi, yi);
-				float H_i1j = ground_h.at(xi + 1, yi);
-				float H_ij1 = ground_h.at(xi, yi + 1);
+					float pos[2] = {float(xi), float(yi)};
+					pos[0] -= dt * u_xy;
+					pos[1] -= dt * v_xy;
+
+					float new_u = interpolate_grid(vel_u_src, pos[0], pos[1]);
+
+					vel_u_dst.set(xi, yi, new_u);
+				}
+
+				{
+					auto v_xy = vel_v_src.at(xi, yi);
+					auto u_xy = interpolate_grid(vel_u_src, xi - 0.5f, yi + 0.5f);
+
+					float pos[2] = {float(xi), float(yi)};
+					pos[0] -= dt * u_xy;
+					pos[1] -= dt * v_xy;
+
+					float new_v = interpolate_grid(vel_v_src, pos[0], pos[1]);
+
+					vel_v_dst.set(xi, yi, new_v);
+				}
+				
+			}
+		}
+
+        // update velocities
+		auto& water_h = water_heights[water_index];
+		auto& water_h_dst = water_heights[next_water_index];
+		auto& vel_u = vel_us[next_water_index];
+		auto& vel_v = vel_vs[next_water_index];
+		for (int yi = 0; yi < GRID_SIZE - 1; ++yi) {
+			for (int xi = 0; xi < GRID_SIZE - 1; ++xi) {
+				float h_ij = water_h.at_clamped(xi, yi);
+				float h_i1j = water_h.at_clamped(xi + 1, yi);
+				float h_ij1 = water_h.at_clamped(xi, yi + 1);
+
+				float H_ij = ground_h.at_clamped(xi, yi);
+				float H_i1j = ground_h.at_clamped(xi + 1, yi);
+				float H_ij1 = ground_h.at_clamped(xi, yi + 1);
 
 				float n_ij = h_ij + H_ij;
 				float n_i1j = h_i1j + H_i1j;
@@ -75,12 +155,12 @@ struct swe_simulation_t {
 				float u_im1j = 0 < xi ? vel_u.at(xi - 1, yi) : 0.0f;
 				float v_ij = vel_v.at(xi, yi);
 				float v_ijm1 = 0 < yi ? vel_v.at(xi, yi - 1) : 0.0f;
-				float h_ij = water_h.at(xi, yi);
+				float h_ij = water_h.at_clamped(xi, yi);
 
-				float h_ip2_j = u_ij   <= 0.0f ? water_h.at(xi + 1, yi) : h_ij;
-				float h_im2_j = u_im1j <= 0.0f ? h_ij     			    : water_h.at(xi - 1, yi);
-				float h_i_jp2 = v_ij   <= 0.0f ? water_h.at(xi, yi + 1) : h_ij;
-				float h_i_jm2 = v_ijm1 <= 0.0f ? h_ij     			    : water_h.at(xi, yi - 1);
+				float h_ip2_j = u_ij   <= 0.0f ? water_h.at_clamped(xi + 1, yi) : h_ij;
+				float h_im2_j = u_im1j <= 0.0f ? h_ij : water_h.at_clamped(xi - 1, yi);
+				float h_i_jp2 = v_ij   <= 0.0f ? water_h.at_clamped(xi, yi + 1) : h_ij;
+				float h_i_jm2 = v_ijm1 <= 0.0f ? h_ij : water_h.at_clamped(xi, yi - 1);
 
 				float dh_dt = (h_ip2_j * u_ij - h_im2_j * u_im1j) / dxdy +
 							(h_i_jp2 * v_ij - h_i_jm2 * v_ijm1) / dxdy;
@@ -91,13 +171,16 @@ struct swe_simulation_t {
 				water_h_dst.set(xi, yi, new_h);
 			}
 		}
-        std::swap(water_h, water_h_dst);
+
+		water_index = next_water_index;
     }
 
     float get_divergence(int xi, int yi) {
-        // todo: is it a divergence?)
+		float u11 = velocity_u(xi, yi);
+		float u01 = velocity_u(xi - 1, yi);
+		float v11 = velocity_v(xi, yi);
+		float v10 = velocity_v(xi, yi - 1);
 
-        return (vel_u.at(xi, yi) - vel_u.at(xi - 1, yi)) / dxdy + 
-            (vel_v.at(xi, yi) - vel_v.at(xi, yi - 1)) / dxdy;
+        return (u11 - u01 + v11 - v10) / dxdy;
     }
 };

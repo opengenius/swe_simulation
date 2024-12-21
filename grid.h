@@ -6,7 +6,7 @@ struct grid_t {
 
 	float values[GRID_SIZE * GRID_SIZE];
 
-	grid_t(float init_v) {
+	grid_t(float init_v = 0.0f) {
         for (auto& v : values) {
             v = init_v;
         }
@@ -31,8 +31,23 @@ struct grid_t {
 		}
 	}
 
-	float at(int x, int y) {
-		return at_ref(x < GRID_SIZE ? x : GRID_SIZE - 1, y < GRID_SIZE ? y : GRID_SIZE - 1);
+	float at(int x, int y) const {
+		assert(0 <= x && x < GRID_SIZE);
+		assert(0 <= y&& y < GRID_SIZE);
+		return const_cast<grid_t*>(this)->at_ref(x, y);
+	}
+
+	float at(int x, int y, float default_value) const {
+		if (x < 0 || x >= GRID_SIZE || y < 0 || y >= GRID_SIZE) {
+			return default_value;
+		}
+		return at(x, y);
+	}
+
+	float at_clamped(int x, int y) const {
+		x = std::max(0, std::min(GRID_SIZE - 1, x));
+		y = std::max(0, std::min(GRID_SIZE - 1, y));
+		return at(x, y);		
 	}
 
 	void set(int x, int y, float v) {
