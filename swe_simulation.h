@@ -60,7 +60,7 @@ struct swe_simulation_t {
 		const float EPS = 0.001f;//0.0001f * dxdy;
 		const float max_vel = dxdy / dt * 0.5f; // 0.25f seems more stable with lower dx
         const float drag_shore_height_threshold = 0.1f;
-        const float drag_factor = 0.05f;
+        const float drag_factor = 0.0f;
 
 		int next_water_index = (water_index + 1) % 2;
 		
@@ -147,7 +147,8 @@ struct swe_simulation_t {
 				vel_v.set(xi, yi, v_ref);
 			}
 		}
-
+		static const bool limit_heights = false;
+		
 		// update height
 		for (int yi = 0; yi < GRID_SIZE; ++yi) {
 			for (int xi = 0; xi < GRID_SIZE; ++xi) {
@@ -161,6 +162,16 @@ struct swe_simulation_t {
 				float h_im2_j = u_im1j <= 0.0f ? h_ij : water_h.at_clamped(xi - 1, yi);
 				float h_i_jp2 = v_ij   <= 0.0f ? water_h.at_clamped(xi, yi + 1) : h_ij;
 				float h_i_jm2 = v_ijm1 <= 0.0f ? h_ij : water_h.at_clamped(xi, yi - 1);
+
+				if (limit_heights) {
+					const float b = 2.0f;
+					float h_avgmax = b * dxdy / (g * dt);
+					float h_adj = std::max(0.0f, (h_ip2_j + h_im2_j + h_i_jp2 + h_i_jm2) * 0.25f - h_avgmax);
+					h_ip2_j -= h_adj;
+					h_im2_j -= h_adj;
+					h_i_jp2 -= h_adj;
+					h_i_jm2 -= h_adj;
+				}
 
 				float dh_dt = (h_ip2_j * u_ij - h_im2_j * u_im1j) / dxdy +
 							(h_i_jp2 * v_ij - h_i_jm2 * v_ijm1) / dxdy;
