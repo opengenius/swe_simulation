@@ -54,6 +54,11 @@ struct swe_simulation_t {
 			y_fr);
 	}
 
+	static float cubic_inverse(float in_t) {
+		float t = 1.0f - in_t;
+		return 1.0f - t * t * t;
+	}
+
     void step() {
         const float g = 9.81f;
 		const float dt = 0.01666f;	
@@ -101,6 +106,7 @@ struct swe_simulation_t {
 		}
 
         // update velocities
+		const bool dampen_velocities = false;
 		auto& water_h = water_heights[water_index];
 		auto& water_h_dst = water_heights[next_water_index];
 		auto& vel_u = vel_us[next_water_index];
@@ -122,6 +128,15 @@ struct swe_simulation_t {
 				float u_ref = vel_u.at(xi, yi);
 				float v_ref = vel_v.at(xi, yi);
 
+				float dampening_factor_x = 1.0f;
+				float dampening_factor_y = 1.0f;
+				if (dampen_velocities) {
+					// dampen velocities near egdes
+					const int dapmening_widht = 8;
+					dampening_factor_x = cubic_inverse(std::min(1.0f, std::min(xi, GRID_SIZE - xi) / float(dapmening_widht)));
+					dampening_factor_y = cubic_inverse(std::min(1.0f, std::min(yi, GRID_SIZE - yi) / float(dapmening_widht)));
+				}
+
 				// enable drag force on the shores
 				float drag_koef = h_ij < drag_shore_height_threshold ? drag_factor : 0.0f;
 
@@ -142,6 +157,9 @@ struct swe_simulation_t {
 					float new_v = v_ref - dt * g * dh_dy - drag_koef * v_ref;
 					v_ref = std::max(-max_vel, std::min(new_v, max_vel));
 				}
+
+				u_ref *= dampening_factor_x;
+				v_ref *= dampening_factor_y;
 
 				vel_u.set(xi, yi, u_ref);
 				vel_v.set(xi, yi, v_ref);
